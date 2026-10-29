@@ -1,25 +1,13 @@
--- cleanup previous run if loaded again
-if getgenv and getgenv().TestToggleCleanup then
-	pcall(getgenv().TestToggleCleanup)
-end
-
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
-local Debris = game:GetService("Debris")
 local ShootRemote = game:GetService("ReplicatedStorage"):WaitForChild("ShootRemote")
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 local RANGE = 500
 local enabled = true
-local conns = {}
-
-local function track(c)
-	table.insert(conns, c)
-	return c
-end
 
 -- gui
 local gui = Instance.new("ScreenGui")
@@ -46,7 +34,7 @@ local function toggle()
 	refresh()
 end
 
-track(button.MouseButton1Click:Connect(toggle))
+button.MouseButton1Click:Connect(toggle)
 
 -- visuals: tracer line from the gun to the hit point
 local function drawTracer(from, to)
@@ -66,9 +54,52 @@ local function drawTracer(from, to)
 	tracer.Parent = Workspace
 
 	TweenService:Create(tracer, TweenInfo.new(0.15), { Transparency = 1 }):Play()
-	Debris:AddItem(tracer, 0.2)
+	game:GetService("Debris"):AddItem(tracer, 0.2)
 end
 
 -- visuals: red flash on whatever model got hit
 local function flashHit(part)
-	if
+	if not part then return end
+	local model = part:FindFirstAncestorOfClass("Model")
+	if not model or not model:FindFirstChildOfClass("Humanoid") then return end
+
+	local hl = Instance.new("Highlight")
+	hl.FillColor = Color3.fromRGB(255, 60, 60)
+	hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+	hl.FillTransparency = 0.3
+	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	hl.Adornee = model
+	hl.Parent = model
+
+	TweenService:Create(hl, TweenInfo.new(0.4), { FillTransparency = 1, OutlineTransparency = 1 }):Play()
+	game:GetService("Debris"):AddItem(hl, 0.4)
+end
+
+local function fire()
+	if not enabled then return end
+	local char = player.Character
+	if not char then return end
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { char }
+
+	local origin = camera.CFrame.Position
+	local dir = camera.CFrame.LookVector * RANGE
+	local result = Workspace:Raycast(origin, dir, params)
+
+	local endPos = result and result.Position or (origin + dir)
+	drawTracer(origin, endPos)
+	if result then flashHit(result.Instance) end
+
+	ShootRemote:FireServer(origin, dir, result and result.Position)
+end
+
+UIS.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if input.KeyCode == Enum.KeyCode.F then
+		toggle()
+	elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+		fire()
+	end
+end)
